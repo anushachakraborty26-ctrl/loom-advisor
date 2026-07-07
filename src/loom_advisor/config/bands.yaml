@@ -1,0 +1,50 @@
+# Golden setting bands per yarn profile.
+#
+# Config is data: tuning these numbers for a new yarn or plant is a file edit,
+# not a code change. Every band cites where it came from.
+#
+# Provenance: PROJECT 1, Alok Industries terry weaving shed, June 2025 —
+# four-loom before/after study on coarse open-end cotton weft (12s/14s Ne),
+# plus machine-manual values from the literature review.
+
+thresholds:
+  # CMPX above this is treated as elevated. All four study looms started
+  # above it (51.3 / 97.3 / 88 / 60) and finished below it (26 / 43 / 34 / 30).
+  cmpx_alert: 45
+
+evidence:
+  plant_study:
+    n_cases: 4
+    efficiency_gain_points: "+5 to +32"
+    cmpx_reduction_pct: "-31% to -61%"
+    source: "PROJECT 1, Alok Industries air-jet weaving study, June 2025"
+
+profiles:
+  coarse_oe_cotton:
+    description: >
+      Coarse open-end cotton weft, 10-16 Ne. The profile the plant study was
+      run on. Coarse OE yarn is hairy: the air jet grips it well, so it needs
+      a gentler launch than finer or smoother yarns.
+    match:
+      weft_material: cotton
+      weft_spin: oe
+      weft_count_ne: [10, 16]
+    bands:
+      main_pressure:        { min: 3.4, max: 3.5, hard_max: 4.5, unit: "kg/cm²" }
+      tandem_pressure:      { min: 3.0, max: 3.2, unit: "kg/cm²" }
+      sub_pressure:         { min: 5.5, max: 6.0, unit: "kg/cm²" }
+      main_nozzle_height_mm: { min: 139, max: 139, unit: "mm" }
+      sub_nozzle_spacing_mm: { min: 65, max: 65, unit: "mm" }
+      sub_to_reed_gap_mm:   { min: 2.5, max: 3.0, unit: "mm" }
+      shed_crossing_deg:    { min: 302, max: 312, unit: "deg" }
+
+  # Placeholder: the study claims filament results but tabulated no data.
+  # Smooth filament has almost no hairiness, so the cotton logic (less air for
+  # hairier yarn) does NOT transfer. Bands stay empty until trials exist —
+  # the engine will say so rather than guess.
+  polyester_filament:
+    description: "30 Den polyester filament weft — no tabulated trial data yet."
+    match:
+      weft_material: polyester
+      weft_spin: filament
+    bands: {}

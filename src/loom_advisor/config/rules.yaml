@@ -1,0 +1,234 @@
+# The diagnostic knowledge base: symptom -> cause -> action.
+#
+# Encodes the manual reasoning of PROJECT 1 (Alok Industries, June 2025).
+# The engine only interprets these rules; it invents nothing. Every
+# suggestion the app emits carries the rule_id that produced it, so any
+# advice can be traced back to a line in this file.
+
+version: 1
+
+# Fired when a setting sits outside its profile band.
+band_rules:
+  main_pressure:
+    above:
+      rule_id: BAND-MAIN-HIGH
+      action: "Lower main nozzle pressure from {value} to {min}-{max} {unit}"
+      reasoning: >
+        Coarse hairy yarn gives the air jet plenty of grip, so it needs a
+        gentle launch. An over-driven main nozzle over-stresses the weft:
+        broken picks and bunch formation.
+      confidence: high
+    below:
+      rule_id: BAND-MAIN-LOW
+      action: "Raise main nozzle pressure from {value} to {min}-{max} {unit}"
+      reasoning: >
+        Insufficient launch pressure loses the weft mid-flight: bend picks
+        and short picks that never reach the far selvedge.
+      confidence: high
+  tandem_pressure:
+    above:
+      rule_id: BAND-TANDEM-HIGH
+      action: "Lower tandem nozzle pressure from {value} to {min}-{max} {unit}"
+      reasoning: >
+        Tandem assists the launch; excess here adds the same over-stress as
+        a hot main nozzle (broken picks, bunching) without improving reach.
+      confidence: high
+    below:
+      rule_id: BAND-TANDEM-LOW
+      action: "Raise tandem nozzle pressure from {value} to {min}-{max} {unit}"
+      reasoning: "Weak launch assist: risks bend and short picks."
+      confidence: medium
+  sub_pressure:
+    above:
+      rule_id: BAND-SUB-HIGH
+      action: "Lower sub (relay) nozzle pressure from {value} to {min}-{max} {unit}"
+      reasoning: >
+        Over-driven relay chain wastes compressed air and can whip the weft.
+      confidence: medium
+    below:
+      rule_id: BAND-SUB-LOW
+      action: "Raise sub (relay) nozzle pressure from {value} to {min}-{max} {unit}"
+      reasoning: >
+        The relay chain carries the weft across the full width; too little
+        relay pressure strands it short of the far selvedge.
+      confidence: high
+  main_nozzle_height_mm:
+    above:
+      rule_id: BAND-NOZZLE-HEIGHT
+      action: "Reset main nozzle height from {value} to {min} {unit}"
+      reasoning: >
+        Misaligned launch: the weft leaves the nozzle off-axis of the reed
+        air channel, causing bend picks. Manual value is 139 mm.
+      confidence: high
+    below:
+      rule_id: BAND-NOZZLE-HEIGHT
+      action: "Reset main nozzle height from {value} to {min} {unit}"
+      reasoning: >
+        Misaligned launch: the weft leaves the nozzle off-axis of the reed
+        air channel, causing bend picks. Manual value is 139 mm.
+      confidence: high
+  sub_nozzle_spacing_mm:
+    above:
+      rule_id: BAND-SUB-SPACING
+      action: "Correct sub nozzle spacing from {value} to {min} {unit}"
+      reasoning: >
+        Uneven relay hand-off: gaps in the air chain let the weft decelerate
+        between nozzles.
+      confidence: medium
+    below:
+      rule_id: BAND-SUB-SPACING
+      action: "Correct sub nozzle spacing from {value} to {min} {unit}"
+      reasoning: >
+        Uneven relay hand-off: gaps in the air chain let the weft decelerate
+        between nozzles.
+      confidence: medium
+  sub_to_reed_gap_mm:
+    above:
+      rule_id: BAND-REED-GAP
+      action: "Close sub-nozzle-to-reed gap from {value} to {min}-{max} {unit}"
+      reasoning: >
+        Wrong nozzle gauging scatters the air out of the reed channel —
+        a listed cause of bunch formation.
+      confidence: medium
+    below:
+      rule_id: BAND-REED-GAP
+      action: "Open sub-nozzle-to-reed gap from {value} to {min}-{max} {unit}"
+      reasoning: >
+        Wrong nozzle gauging scatters the air out of the reed channel —
+        a listed cause of bunch formation.
+      confidence: medium
+  shed_crossing_deg:
+    above:
+      rule_id: BAND-TIMING-LATE
+      action: "Advance shed crossing from {value} to {min}-{max} {unit}"
+      reasoning: "Crossing too late leaves the shed slack at beat-up."
+      confidence: medium
+    below:
+      rule_id: BAND-TIMING-EARLY
+      action: "Delay shed crossing from {value} to {min}-{max} {unit}"
+      reasoning: >
+        Closing the shed too early arrests the weft in the upper warp layer
+        before it clears the width.
+      confidence: medium
+
+# Fired when the operator reports a dominant break type. The type of break
+# points at the cause — that is the whole diagnostic method.
+symptom_rules:
+  broken:
+    rule_id: SYM-BROKEN
+    action: >
+      Reduce launch stress: verify main/tandem pressure against band, check
+      the weft cutter (a too-strong shear blow snaps picks), verify yarn
+      strength (RKM/CSP) with the lab.
+    reasoning: >
+      A snapped pick means too much force on the yarn: over-driven launch
+      nozzles, a harsh cutter, or weak/thin yarn.
+    confidence: medium
+  bend:
+    rule_id: SYM-BEND
+    action: "Raise insertion pressure toward band (main first, then relay)."
+    reasoning: >
+      A kinked pick that will not straighten means too little air behind it.
+    confidence: medium
+  short:
+    rule_id: SYM-SHORT
+    action: >
+      Inspect the feed path: prewinder drag-roller slippage, stopper
+      cleanliness, FCU/hook-pin setting, and the sub-nozzle air pipe for
+      leaks or blockage.
+    reasoning: >
+      A pick that falls short of the far selvedge usually lost length or
+      speed at the feeder, or lost relay push mid-width.
+    confidence: medium
+  bunch:
+    rule_id: SYM-BUNCH
+    action: >
+      Lower main/tandem pressure toward band and verify sub-nozzle-to-reed
+      gap is 2.5-3.0 mm.
+    reasoning: >
+      Bunching is the weft arriving with too much energy or scattered air:
+      high launch pressure or bad nozzle gauging.
+    confidence: high
+  entanglement:
+    rule_id: SYM-ENTANGLE
+    action: >
+      Check which shed layer traps the pick, then correct backrest roller
+      height (upper layer traps -> lower the backrest; lower layer traps ->
+      raise it) and verify heald frame heights (selvedge 68 / pile 72 /
+      ground 68 mm). Consider delaying shed crossing.
+    reasoning: >
+      Entanglement is shed geometry: a loose warp layer or wrong shed height
+      lets warp catch the flying weft.
+    confidence: medium
+  selvedge:
+    rule_id: SYM-SELVEDGE
+    action: >
+      Check leno selvedge condition and draw-in order at the failing edge;
+      re-tie or re-draw loose selvedge ends.
+    reasoning: >
+      Stops clustered at the fabric edge point at the selvedge system, not
+      the insertion system.
+    confidence: medium
+
+meta_rules:
+  # The signature move of the plant study: never just weaken the launch —
+  # move the energy to the relay chain so the weft still reaches the far side.
+  rebalance:
+    rule_id: REBALANCE
+    action: >
+      Pair the launch reduction with more relay support: raise sub nozzle
+      pressure from {value} toward {max} {unit}.
+    reasoning: >
+      Cutting launch pressure alone risks swapping broken picks for short
+      picks. Synchronising main and relay pressures — gentle start, strong
+      carry — was the core of the plant study's gains.
+    confidence: high
+
+  # Timing is a real but small lever; pressure is the big one.
+  timing:
+    rule_id: TIMING-DELAY
+    action: >
+      Consider delaying shed crossing from {value} toward {max} {unit} so the
+      shed stays open slightly longer around insertion.
+    reasoning: >
+      With breakage elevated, a slightly later crossing reduces the chance
+      the closing warp pinches a still-moving pick. Small lever: the study
+      saw slight CMPX improvement from timing versus large gains from
+      pressure.
+    confidence: medium
+
+  # Cheap checks behind a surprising share of breaks.
+  hygiene:
+    rule_id: HYGIENE
+    action: >
+      Run the hygiene checklist: clean main nozzle and reed dents, inspect
+      weft cutter sharpness and opening, inspect sub-nozzle air pipe,
+      align package direction with the prewinder.
+    reasoning: >
+      Dirt, dull cutters, and leaky air pipes disturb insertion consistency;
+      the plant study fixed all four looms partly through these.
+    confidence: low
+
+  # If the yarn itself is weak, settings cannot fully save it.
+  yarn_gate:
+    rule_id: YARN-GATE
+    rkm_min: 12
+    csp_min: 1900
+    action: >
+      Flag yarn quality to the spinning/purchase team: strength below
+      threshold (RKM < 12 or CSP < 1900).
+    reasoning: >
+      Low RKM/CSP yarn breaks under normal insertion stress. Loom settings
+      can reduce, not eliminate, these breaks — fix the input, not the knobs.
+    confidence: high
+
+  # From the study's own suggestion section.
+  balloon:
+    rule_id: BALLOON
+    action: >
+      If random feeder-side breaks persist after settings are in band, fit an
+      individual balloon breaker on each prewinder.
+    reasoning: >
+      Yarn ballooning off the prewinder adds centrifugal tension spikes the
+      weft may not survive.
+    confidence: low
