@@ -1,0 +1,26 @@
+{
+  "loom_id": "47",
+  "machine_type": "dobby",
+  "article_id": "TERRY-12OE",
+  "construction": {
+    "weft_count_ne": 12,
+    "weft_spin": "oe",
+    "weft_material": "cotton"
+  },
+  "settings": {
+    "main_pressure": 3.6,
+    "tandem_pressure": 3.2,
+    "sub_pressure": 5.5,
+    "main_nozzle_height_mm": 139,
+    "shed_crossing_deg": 302,
+    "speed_rpm": 413
+  },
+  "status_log": [
+    {
+      "report_date": "2025-06-13",
+      "filling_cmpx": 88,
+      "breakages_per_day": 235,
+      "efficiency_pct": 50
+    }
+  ]
+}

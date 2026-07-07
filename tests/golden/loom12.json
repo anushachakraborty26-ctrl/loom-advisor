@@ -1,0 +1,25 @@
+{
+  "loom_id": "12",
+  "machine_type": "jacquard",
+  "article_id": "TERRY-12OE",
+  "construction": {
+    "weft_count_ne": 12,
+    "weft_spin": "oe",
+    "weft_material": "cotton"
+  },
+  "settings": {
+    "main_pressure": 3.4,
+    "tandem_pressure": 3.5,
+    "sub_pressure": 5.5,
+    "main_nozzle_height_mm": 139,
+    "speed_rpm": 423
+  },
+  "status_log": [
+    {
+      "report_date": "2025-06-11",
+      "filling_cmpx": 51.3,
+      "breakages_per_day": 202,
+      "efficiency_pct": 61.4
+    }
+  ]
+}
