@@ -20,3 +20,6 @@ venv/
 
 # OS
 .DS_Store
+
+# Factory documents — never commit real plant data
+data/incoming/
