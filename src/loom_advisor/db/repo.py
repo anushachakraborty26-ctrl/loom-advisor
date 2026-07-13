@@ -92,9 +92,16 @@ def add_status(
         StatusEventRow(
             loom_id=loom_id,
             report_date=event.report_date,
-            filling_cmpx=event.filling_cmpx,
-            breakages_per_day=event.breakages_per_day,
             efficiency_pct=event.efficiency_pct,
+            rpm=event.rpm,
+            pile_breaks=event.pile_breaks,
+            pile_cmpx=event.pile_cmpx,
+            ground_breaks=event.ground_breaks,
+            ground_cmpx=event.ground_cmpx,
+            weft_breaks=event.weft_breaks,
+            weft_cmpx=event.weft_cmpx,
+            breaks_per_hour=event.breaks_per_hour,
+            total_kilopicks=event.total_kilopicks,
             break_type=event.break_type.value if event.break_type else None,
             source_doc_id=source_doc_id,
         )
@@ -175,8 +182,15 @@ def _require_loom(session: Session, loom_id: str) -> Loom:
 def _status_from_row(row: StatusEventRow) -> StatusEvent:
     return StatusEvent(
         report_date=row.report_date,
-        filling_cmpx=row.filling_cmpx,
-        breakages_per_day=row.breakages_per_day,
         efficiency_pct=row.efficiency_pct,
+        rpm=row.rpm,
+        pile_breaks=row.pile_breaks,
+        pile_cmpx=row.pile_cmpx,
+        ground_breaks=row.ground_breaks,
+        ground_cmpx=row.ground_cmpx,
+        weft_breaks=row.weft_breaks,
+        weft_cmpx=row.weft_cmpx,
+        breaks_per_hour=row.breaks_per_hour,
+        total_kilopicks=row.total_kilopicks,
         break_type=row.break_type,
     )

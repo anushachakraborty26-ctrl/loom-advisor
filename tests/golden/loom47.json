@@ -18,8 +18,8 @@
   "status_log": [
     {
       "report_date": "2025-06-13",
-      "filling_cmpx": 88,
-      "breakages_per_day": 235,
+      "weft_cmpx": 88,
+      "weft_breaks": 235,
       "efficiency_pct": 50
     }
   ]

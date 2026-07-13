@@ -79,12 +79,27 @@ class Settings(BaseModel):
 
 
 class StatusEvent(BaseModel):
-    """One row of the daily CMPX / breakage report for one loom."""
+    """One row of the daily Break CMPX report for one loom.
+
+    Mirrors the plant's actual report format (verified against the
+    24-06-2026 TT weaving report): breaks are tracked in three categories —
+    pile warp, ground warp, and weft — each with a count and a CMPX
+    (breaks per 100,000 picks; confirmed against the report's TOTAL KP
+    kilopick column)."""
 
     report_date: date
-    filling_cmpx: float | None = None
-    breakages_per_day: int | None = None
     efficiency_pct: float | None = None
+    rpm: float | None = None
+    pile_breaks: int | None = None
+    pile_cmpx: float | None = None
+    ground_breaks: int | None = None
+    ground_cmpx: float | None = None
+    weft_breaks: int | None = None
+    weft_cmpx: float | None = Field(
+        None, description="The filling CMPX the advisor tunes for"
+    )
+    breaks_per_hour: float | None = None
+    total_kilopicks: float | None = None
     break_type: BreakType | None = Field(
         None, description="Dominant break type observed, if the operator noted one"
     )

@@ -88,23 +88,37 @@ def advise(record: LoomRecord, cfg: Config | None = None) -> AdviceReport:
 
     profile_name, profile = select_profile(record.construction, cfg.bands["profiles"])
     latest = record.latest_status
-    cmpx = latest.filling_cmpx if latest else None
-    alert = cfg.bands["thresholds"]["cmpx_alert"]
+    thresholds = cfg.bands["thresholds"]
+    cmpx = latest.weft_cmpx if latest else None
+    alert = thresholds["weft_cmpx_target"]
     cmpx_high = cmpx is not None and cmpx >= alert
     study_effect = _study_effect(cfg)
 
     if latest is not None:
         status_bits = []
-        if latest.filling_cmpx is not None:
-            status_bits.append(f"CMPX {latest.filling_cmpx:g}")
-        if latest.breakages_per_day is not None:
-            status_bits.append(f"{latest.breakages_per_day} breaks/day")
+        if latest.weft_cmpx is not None:
+            status_bits.append(f"weft CMPX {latest.weft_cmpx:g}")
+        if latest.weft_breaks is not None:
+            status_bits.append(f"{latest.weft_breaks} weft breaks")
         if latest.efficiency_pct is not None:
             status_bits.append(f"efficiency {latest.efficiency_pct:g}%")
         line = f"Latest report {latest.report_date.isoformat()}: " + " | ".join(status_bits)
         if cmpx_high:
-            line += f" [ALERT: CMPX at or above {alert}]"
+            line += f" [ALERT: weft CMPX at or above target {alert:g}]"
         notes.append(line)
+
+        # Pile/ground breaks are warp-side problems (warp preparation,
+        # sizing, shed geometry) — flag them, but don't let them trigger
+        # weft-insertion tuning.
+        for category in ("pile", "ground"):
+            value = getattr(latest, f"{category}_cmpx")
+            target = thresholds[f"{category}_cmpx_target"]
+            if value is not None and value >= target:
+                notes.append(
+                    f"{category.capitalize()} CMPX {value:g} is above the plant target "
+                    f"{target:g} — warp-side issue (warp prep, sizing, shed geometry), "
+                    "outside weft-insertion tuning scope."
+                )
     else:
         notes.append("No status reports on record — advice is settings-only.")
 

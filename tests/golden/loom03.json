@@ -17,8 +17,8 @@
   "status_log": [
     {
       "report_date": "2025-06-12",
-      "filling_cmpx": 97.27,
-      "breakages_per_day": 314,
+      "weft_cmpx": 97.27,
+      "weft_breaks": 314,
       "efficiency_pct": 57
     }
   ]

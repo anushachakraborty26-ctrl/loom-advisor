@@ -103,7 +103,7 @@ def test_unknown_yarn_refuses_to_guess():
         loom_id="X",
         construction=Construction(weft_material="silk", weft_count_ne=40),
         settings=Settings(main_pressure=9.9),
-        status_log=[StatusEvent(report_date=date(2025, 6, 20), filling_cmpx=80)],
+        status_log=[StatusEvent(report_date=date(2025, 6, 20), weft_cmpx=80)],
     )
     report = advise(record, CFG)
     assert report.profile == "none"
@@ -118,7 +118,7 @@ def test_filament_profile_has_no_bands_yet():
         loom_id="F",
         construction=Construction(weft_material="polyester", weft_spin=WeftSpin.filament),
         settings=Settings(main_pressure=3.6),
-        status_log=[StatusEvent(report_date=date(2025, 6, 20), filling_cmpx=50)],
+        status_log=[StatusEvent(report_date=date(2025, 6, 20), weft_cmpx=50)],
     )
     report = advise(record, CFG)
     assert report.profile == "polyester_filament"
@@ -151,15 +151,37 @@ def test_no_rebalance_when_sub_already_at_max():
 
 
 def test_quiet_loom_gets_no_noise():
-    """A loom in band with low CMPX should produce no suggestions."""
+    """A loom in band with weft CMPX below the plant target (12) should
+    produce no suggestions."""
     record = load_golden("loom47.json")
     record.settings.main_pressure = 3.4
     record.settings.shed_crossing_deg = 312
     record.status_log = [
-        StatusEvent(report_date=date(2025, 6, 20), filling_cmpx=25, efficiency_pct=80)
+        StatusEvent(report_date=date(2025, 6, 20), weft_cmpx=8, efficiency_pct=80)
     ]
     report = advise(record, CFG)
     assert report.suggestions == []
+
+
+def test_warp_side_breaks_noted_but_not_tuned():
+    """Pile/ground CMPX above plant target must surface as a note, not as
+    weft-insertion suggestions — different subsystem, different fix."""
+    record = load_golden("loom47.json")
+    record.settings.main_pressure = 3.4
+    record.settings.shed_crossing_deg = 312
+    record.status_log = [
+        StatusEvent(
+            report_date=date(2025, 6, 20),
+            weft_cmpx=8,
+            pile_cmpx=6.5,
+            ground_cmpx=2.0,
+            efficiency_pct=80,
+        )
+    ]
+    report = advise(record, CFG)
+    assert report.suggestions == []
+    assert any("Pile CMPX" in n and "warp-side" in n for n in report.notes)
+    assert not any("Ground CMPX" in n for n in report.notes)  # ground 2.0 < target 4
 
 
 # --- Engineering properties ---------------------------------------------------

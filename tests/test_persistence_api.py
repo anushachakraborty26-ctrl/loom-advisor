@@ -24,8 +24,8 @@ SETTINGS = {
 }
 STATUS = {
     "report_date": "2025-06-13",
-    "filling_cmpx": 88,
-    "breakages_per_day": 235,
+    "weft_cmpx": 88,
+    "weft_breaks": 235,
     "efficiency_pct": 50,
 }
 
@@ -79,7 +79,7 @@ def test_unknown_loom_404(client):
 
 
 def test_history_ordered(seeded):
-    earlier = dict(STATUS, report_date="2025-06-12", filling_cmpx=90)
+    earlier = dict(STATUS, report_date="2025-06-12", weft_cmpx=90)
     assert seeded.post("/looms/47/status", json=earlier).status_code == 201
     history = seeded.get("/looms/47/history").json()
     dates = [row["report_date"] for row in history]

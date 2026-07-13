@@ -79,9 +79,16 @@ class StatusEventRow(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     loom_id: Mapped[str] = mapped_column(ForeignKey("looms.loom_id"))
     report_date: Mapped[date] = mapped_column(Date)
-    filling_cmpx: Mapped[float | None] = mapped_column(nullable=True)
-    breakages_per_day: Mapped[int | None] = mapped_column(nullable=True)
     efficiency_pct: Mapped[float | None] = mapped_column(nullable=True)
+    rpm: Mapped[float | None] = mapped_column(nullable=True)
+    pile_breaks: Mapped[int | None] = mapped_column(nullable=True)
+    pile_cmpx: Mapped[float | None] = mapped_column(nullable=True)
+    ground_breaks: Mapped[int | None] = mapped_column(nullable=True)
+    ground_cmpx: Mapped[float | None] = mapped_column(nullable=True)
+    weft_breaks: Mapped[int | None] = mapped_column(nullable=True)
+    weft_cmpx: Mapped[float | None] = mapped_column(nullable=True)
+    breaks_per_hour: Mapped[float | None] = mapped_column(nullable=True)
+    total_kilopicks: Mapped[float | None] = mapped_column(nullable=True)
     break_type: Mapped[str | None] = mapped_column(String, nullable=True)
     source_doc_id: Mapped[int | None] = mapped_column(
         ForeignKey("documents.id"), nullable=True
