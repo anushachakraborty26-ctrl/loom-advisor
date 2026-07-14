@@ -1,8 +1,8 @@
 """Pour the VLM-extracted shed into the database.
 
 Sources (all produced by earlier steps, no API calls here):
-- data/incoming/extracted/*.json        design-sheet extractions (one per photo)
-- data/incoming/eval_results/eval_*.json  CMPX report page extractions (latest)
+- data/incoming/extracted/*.json           design-sheet extractions (one per photo)
+- data/incoming/extracted_reports/<date>.json  Break CMPX report days (extract_report.py)
 
 Rules:
 - Duplicate sheets for one loom: keep the richest extraction, flag the rest.
@@ -38,7 +38,9 @@ from loom_advisor.schema import StatusEvent
 ROOT = Path(__file__).resolve().parent.parent
 INCOMING = ROOT / "data" / "incoming"
 DB_PATH = ROOT / "loom_advisor.db"
-REPORT_DATE = date(2026, 6, 24)
+# Sheets and reports are all from June 2026; assignments open at month start
+# so every report day falls inside the article's window.
+ASSIGNMENT_START = date(2026, 6, 1)
 MACHINE_TYPES = {"jacquard", "dobby"}
 
 
@@ -72,34 +74,38 @@ def dedupe_sheets(
     return {loom: extraction for loom, (_, extraction, _) in best.items()}, flagged
 
 
-def load_cmpx_rows() -> tuple[list[CmpxRow], str]:
-    latest = max((INCOMING / "eval_results").glob("eval_*.json"))
-    data = json.loads(latest.read_text())
-    rows = [
-        CmpxRow.model_validate(raw)
-        for page in data["cmpx_pages"]
-        for raw in page["extraction"]["rows"]
-    ]
-    return rows, latest.name
+def load_report_days() -> list[tuple[date, list[CmpxRow]]]:
+    days = []
+    for path in sorted((INCOMING / "extracted_reports").glob("*.json")):
+        data = json.loads(path.read_text())
+        rows = [CmpxRow.model_validate(raw) for raw in data["rows"]]
+        days.append((date.fromisoformat(data["report_date"]), rows))
+    return days
 
 
 def main() -> None:
     sheets_by_loom, flagged = dedupe_sheets(load_sheets())
-    cmpx_rows, eval_file = load_cmpx_rows()
+    report_days = load_report_days()
 
-    verified_rows: list[CmpxRow] = []
-    for row in cmpx_rows:
-        verdict = check_row_consistency(row)
-        if verdict == "pass":
-            verified_rows.append(row)
-        else:
-            flagged.append(
-                {
-                    "loom_no": row.loom_no,
-                    "reason": f"CMPX row {verdict}s the identity check",
-                    "row": row.model_dump(),
-                }
-            )
+    verified: dict[date, dict[str, CmpxRow]] = {}
+    for report_date, rows in report_days:
+        verified[report_date] = {}
+        for row in rows:
+            loom = row.loom_no.strip()
+            verdict = check_row_consistency(row)
+            if verdict == "pass" and loom.isdigit():
+                verified[report_date][loom] = row
+            else:
+                flagged.append(
+                    {
+                        "loom_no": row.loom_no,
+                        "report_date": report_date.isoformat(),
+                        "reason": f"CMPX row {verdict}s the identity check"
+                        if verdict != "pass"
+                        else "unusable loom_no",
+                        "row": row.model_dump(),
+                    }
+                )
 
     if DB_PATH.exists():
         DB_PATH.unlink()
@@ -107,12 +113,14 @@ def main() -> None:
     Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine)
 
-    machine_types = {
-        r.loom_no.strip(): r.loom_type
-        for r in cmpx_rows
-        if r.loom_type in MACHINE_TYPES and r.loom_no.strip().isdigit()
-    }
-    status_looms = {r.loom_no.strip() for r in verified_rows if r.loom_no.strip().isdigit()}
+    machine_types: dict[str, str] = {}
+    for _, rows in report_days:
+        for row in rows:
+            loom = row.loom_no.strip()
+            if row.loom_type in MACHINE_TYPES and loom.isdigit():
+                machine_types.setdefault(loom, row.loom_type)
+
+    status_looms = {loom for day in verified.values() for loom in day}
     all_looms = sorted(set(sheets_by_loom) | status_looms, key=int)
 
     with session_factory() as session:
@@ -123,64 +131,76 @@ def main() -> None:
         for loom, extraction in sheets_by_loom.items():
             article = design_sheet_to_article(extraction)
             repo.upsert_article(session, article)
-            repo.assign_article(session, loom, article.article_id, REPORT_DATE)
+            repo.assign_article(session, loom, article.article_id, ASSIGNMENT_START)
             articles += 1
 
         statuses = 0
-        for row in verified_rows:
-            loom = row.loom_no.strip()
-            if not loom.isdigit():
-                continue
-            event = StatusEvent(
-                report_date=REPORT_DATE,
-                efficiency_pct=row.efficiency_pct,
-                rpm=row.rpm,
-                pile_breaks=row.pile_breaks,
-                pile_cmpx=row.pile_cmpx,
-                ground_breaks=row.ground_breaks,
-                ground_cmpx=row.ground_cmpx,
-                weft_breaks=row.weft_breaks,
-                weft_cmpx=row.weft_cmpx,
-                breaks_per_hour=row.breaks_per_hour,
-                total_kilopicks=row.total_kilopicks,
-            )
-            try:
-                repo.add_status(session, loom, event)
-                statuses += 1
-            except repo.DuplicateStatusError:
-                flagged.append(
-                    {"loom_no": loom, "reason": "duplicate CMPX row", "row": row.model_dump()}
+        for report_date, day_rows in sorted(verified.items()):
+            for loom, row in day_rows.items():
+                event = StatusEvent(
+                    report_date=report_date,
+                    efficiency_pct=row.efficiency_pct,
+                    rpm=row.rpm,
+                    pile_breaks=row.pile_breaks,
+                    pile_cmpx=row.pile_cmpx,
+                    ground_breaks=row.ground_breaks,
+                    ground_cmpx=row.ground_cmpx,
+                    weft_breaks=row.weft_breaks,
+                    weft_cmpx=row.weft_cmpx,
+                    breaks_per_hour=row.breaks_per_hour,
+                    total_kilopicks=row.total_kilopicks,
                 )
+                try:
+                    repo.add_status(session, loom, event)
+                    statuses += 1
+                except repo.DuplicateStatusError:
+                    flagged.append(
+                        {
+                            "loom_no": loom,
+                            "report_date": report_date.isoformat(),
+                            "reason": "duplicate CMPX row",
+                            "row": row.model_dump(),
+                        }
+                    )
 
         flagged_path = INCOMING / "flagged_for_review.json"
         flagged_path.write_text(json.dumps(flagged, indent=2))
 
-        print(f"Ingested from {eval_file} + {len(sheets_by_loom)} deduped sheets:")
+        day_list = ", ".join(d.isoformat() for d in sorted(verified))
+        print(f"Ingested {len(sheets_by_loom)} sheets + report days [{day_list}]:")
         print(f"  looms:        {len(all_looms)}")
-        print(f"  articles:     {articles} (assigned as of {REPORT_DATE.isoformat()})")
+        print(f"  articles:     {articles} (assigned as of {ASSIGNMENT_START.isoformat()})")
         print(f"  status rows:  {statuses} verified (identity check)")
         print(f"  flagged:      {len(flagged)} items -> {flagged_path.relative_to(ROOT)}")
 
-        # Show the advisor working on the shed's worst weft offenders.
-        cfg = load_config()
-        worst = sorted(
-            (r for r in verified_rows if r.weft_cmpx is not None),
-            key=lambda r: r.weft_cmpx or 0,
-            reverse=True,
-        )[:5]
-        print("\nWorst weft CMPX on the shed, per the advisor:")
-        for row in worst:
-            record = repo.get_loom_record(session, row.loom_no.strip())
-            report = advise(record, cfg)
-            rules = ", ".join(s.rule_id for s in report.suggestions) or "none"
-            print(
-                f"  loom {row.loom_no:>3} ({record.machine_type or '?':>8}) "
-                f"weft CMPX {row.weft_cmpx:>6.2f} | profile {report.profile:<18} | {rules}"
-            )
+        # --- Trend: compare the two most recent report days -----------------
+        if len(verified) >= 2:
+            earlier_date, later_date = sorted(verified)[-2:]
+            earlier, later = verified[earlier_date], verified[later_date]
+            movers = []
+            for loom in sorted(set(earlier) & set(later), key=int):
+                before, after = earlier[loom].weft_cmpx, later[loom].weft_cmpx
+                if before is not None and after is not None:
+                    movers.append((loom, before, after, after - before))
+            movers.sort(key=lambda m: m[3])
+            span = f"{earlier_date.isoformat()} -> {later_date.isoformat()}"
+            print(f"\nWeft CMPX movement, {span} ({len(movers)} looms on both days):")
+            print("  biggest deteriorations:")
+            for loom, before, after, delta in movers[-5:][::-1]:
+                print(f"    loom {loom:>3}: {before:>6.2f} -> {after:>6.2f}  ({delta:+.2f})")
+            print("  biggest improvements:")
+            for loom, before, after, delta in movers[:5]:
+                print(f"    loom {loom:>3}: {before:>6.2f} -> {after:>6.2f}  ({delta:+.2f})")
 
-        print("\nFull advice for the worst loom:\n")
-        worst_record = repo.get_loom_record(session, worst[0].loom_no.strip())
-        _print_report(advise(worst_record, cfg))
+        # --- Advice for the current worst weft offender ----------------------
+        cfg = load_config()
+        latest_rows = verified[max(verified)]
+        worst_loom, worst_row = max(
+            ((loom, row) for loom, row in latest_rows.items() if row.weft_cmpx is not None),
+            key=lambda item: item[1].weft_cmpx,
+        )
+        print(f"\nFull advice for the worst loom on {max(verified).isoformat()}:\n")
+        _print_report(advise(repo.get_loom_record(session, worst_loom), cfg))
 
 
 if __name__ == "__main__":
