@@ -60,6 +60,19 @@ Seed a demo database with the four study looms:
 uv run python scripts/seed_demo.py
 ```
 
+With real plant documents in `data/incoming/` (git-ignored), the VLM pipeline
+digitises the whole shed:
+
+```bash
+uv run python scripts/extract_all_sheets.py      # photos -> extracted JSON (needs ANTHROPIC_API_KEY)
+uv run python scripts/eval_vlm.py                # score extraction vs hand-labelled ground truth
+uv run python scripts/ingest_extractions.py      # verified data -> database + advice demo
+```
+
+CMPX report rows enter the database only if they pass the identity check
+(`cmpx ~= breaks / kilopicks x 100` on all three categories); everything else
+is flagged to `data/incoming/flagged_for_review.json` for a human.
+
 ## The diagnostic model
 
 Two cooperating checks, straight from the study:
@@ -99,7 +112,11 @@ scripts/seed_demo.py
 - [x] Phase 2: event-sourced persistence (SQLite; swap URL for Postgres)
 - [x] Phase 3: REST API
 - [x] Phase 4a: Excel design-sheet adapter
-- [ ] Phase 4b: VLM sheet reader (photo → spec; camera loom-ID lookup)
-- [ ] Phase 5: shed (camera) and office (loom no.) client views
+- [x] Phase 4b: VLM sheet reader + CMPX report parser (photo → validated
+      data, identity-check auto-verification, eval harness, batch pipeline;
+      digitised a real 103-sheet shed in one run)
+- [ ] Phase 5: shed (camera loom-ID lookup) and office (loom no.) client views
 - [ ] Phase 6: trend-drift alerts, automatic before/after attribution,
-      self-tightening expected-effect ranges
+      self-tightening expected-effect ranges; capture per-loom settings so
+      band checks fire on live data (status alone only drives symptom/hygiene
+      rules)
