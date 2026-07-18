@@ -172,6 +172,20 @@ def get_loom_record(session: Session, loom_id: str) -> LoomRecord:
     )
 
 
+def list_looms(session: Session) -> list[tuple[str, str | None]]:
+    """All looms as (loom_id, machine_type), for shed-wide views."""
+    looms = session.scalars(select(Loom)).all()
+    return [(loom.loom_id, loom.machine_type) for loom in looms]
+
+
+def list_shed_status(session: Session) -> list[tuple[str, StatusEvent]]:
+    """Every status event in the shed as (loom_id, event), date-ordered."""
+    rows = session.scalars(
+        select(StatusEventRow).order_by(StatusEventRow.report_date, StatusEventRow.loom_id)
+    ).all()
+    return [(row.loom_id, _status_from_row(row)) for row in rows]
+
+
 def _require_loom(session: Session, loom_id: str) -> Loom:
     loom = session.get(Loom, loom_id)
     if loom is None:
