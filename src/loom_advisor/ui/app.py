@@ -221,11 +221,25 @@ def page_overview(status: pd.DataFrame, looms: pd.DataFrame) -> None:
 def page_lookup(status: pd.DataFrame, looms: pd.DataFrame) -> None:
     st.title("🔎 Loom lookup")
     loom_ids = sorted(looms["loom"], key=int)
+    counts = status.groupby("loom").size() if not status.empty else pd.Series(dtype=int)
+
+    def label(loom: str) -> str:
+        days = int(counts.get(loom, 0))
+        if days == 0:
+            return f"{loom} — no verified data yet"
+        return f"{loom} — {days} report day{'s' if days > 1 else ''}"
+
     default_index = 0
     query_loom = st.query_params.get("loom")
     if query_loom in loom_ids:
         default_index = loom_ids.index(query_loom)
-    loom_id = st.selectbox("Loom number", loom_ids, index=default_index)
+    elif not status.empty:
+        # Land on the shed's current worst weft offender, not on loom 1.
+        latest = status[status["date"] == status["date"].max()]
+        ranked = latest.sort_values("weft_cmpx", ascending=False)
+        if not ranked.empty and ranked["loom"].iloc[0] in loom_ids:
+            default_index = loom_ids.index(ranked["loom"].iloc[0])
+    loom_id = st.selectbox("Loom number", loom_ids, index=default_index, format_func=label)
     if loom_id:
         st.query_params["loom"] = loom_id
         render_loom_detail(loom_id, status)
