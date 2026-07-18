@@ -115,8 +115,18 @@ scripts/seed_demo.py
 - [x] Phase 4b: VLM sheet reader + CMPX report parser (photo → validated
       data, identity-check auto-verification, eval harness, batch pipeline;
       digitised a real 103-sheet shed in one run)
-- [ ] Phase 5: shed (camera loom-ID lookup) and office (loom no.) client views
+- [x] Phase 5: Streamlit UI — shed overview, loom lookup with trends and
+      advice cards, shed camera mode (VLM reads the loom number; the
+      database supplies the rest)
 - [ ] Phase 6: trend-drift alerts, automatic before/after attribution,
       self-tightening expected-effect ranges; capture per-loom settings so
       band checks fire on live data (status alone only drives symptom/hygiene
       rules)
+- [ ] Phase 7: deployment packaging — Dockerfile, reverse proxy (Caddy) with
+      HTTPS + login, run-as-service docs, Postgres swap notes. **Trigger:
+      whichever comes first —** (a) Phase 6 ships, (b) the portfolio needs a
+      public demo link (job applications / pitches), or (c) a real factory or
+      external user wants to run it. Until then the dev setup
+      (`uv run streamlit run`) is the right tool. Design note: the advisor is
+      fully offline-capable — only VLM photo ingestion needs internet — which
+      is the on-premises selling point for factory IT.
