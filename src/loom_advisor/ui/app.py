@@ -18,6 +18,7 @@ import streamlit as st
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from loom_advisor.alerts import overdue_expectations
 from loom_advisor.db import repo
 from loom_advisor.engine import advise, load_config
 from loom_advisor.schema import AdviceReport
@@ -287,11 +288,156 @@ def page_shed_camera(status: pd.DataFrame) -> None:
         st.error(f"Loom {loom_id} is not in the database.")
 
 
+def _save_upload(upload, subdir: str) -> Path:
+    target_dir = ROOT / "data" / "uploads" / subdir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / upload.name
+    target.write_bytes(upload.getvalue())
+    return target
+
+
+def page_data_entry() -> None:
+    from datetime import date, timedelta
+
+    from loom_advisor.ingestion.service import (
+        ingest_design_excel,
+        ingest_design_sheet_photo,
+        ingest_report_upload,
+    )
+
+    st.title("📤 Data entry")
+    st.caption(
+        "Uploaders submit documents — never numbers. The machine verifies "
+        "every row; anything it cannot prove goes to the Review queue for a "
+        "named supervisor. Originals are stored with your name and timestamp."
+    )
+    has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    tab_report, tab_design = st.tabs(
+        ["Weaving room — daily report", "Design studio — order sheet"]
+    )
+
+    with tab_report:
+        report_date = st.date_input(
+            "Report date", value=date.today() - timedelta(days=1), key="rep_date"
+        )
+        pages = st.file_uploader(
+            "Report page photos (all pages)",
+            type=["jpg", "jpeg", "png", "webp"],
+            accept_multiple_files=True,
+            key="rep_pages",
+        )
+        uploader = st.text_input("Your name", key="rep_name")
+        if st.button("Submit report", disabled=not (pages and uploader.strip())):
+            if not has_key:
+                st.error("ANTHROPIC_API_KEY is not set — photo extraction needs the vision model.")
+            else:
+                with st.spinner(f"Extracting and verifying {len(pages)} page(s)…"):
+                    paths = [_save_upload(p, report_date.isoformat()) for p in pages]
+                    with get_sessionmaker()() as session:
+                        summary = ingest_report_upload(
+                            session, paths, report_date, uploader.strip()
+                        )
+                load_shed.clear()
+                st.success(
+                    f"**{summary.verified} rows verified** and stored · "
+                    f"{summary.queued_for_review} sent to review · "
+                    f"{summary.duplicates} duplicates skipped (already on record)"
+                )
+                if summary.queued_for_review:
+                    st.warning(
+                        "Quarantined rows are waiting in the Review queue — "
+                        "a supervisor should resolve them today."
+                    )
+
+    with tab_design:
+        sheet = st.file_uploader(
+            "Order sheet (studio Excel, or a photo of the printed sheet)",
+            type=["xlsx", "jpg", "jpeg", "png", "webp"],
+            key="design_file",
+        )
+        assign_date = st.date_input("Running on the loom from", value=date.today(), key="ds_date")
+        uploader_d = st.text_input("Your name", key="ds_name")
+        if st.button("Submit sheet", disabled=not (sheet and uploader_d.strip())):
+            path = _save_upload(sheet, "design_sheets")
+            with get_sessionmaker()() as session:
+                if sheet.name.lower().endswith(".xlsx"):
+                    summary = ingest_design_excel(session, path, uploader_d.strip())
+                elif not has_key:
+                    st.error(
+                        "ANTHROPIC_API_KEY is not set — photo extraction needs the vision model."
+                    )
+                    summary = None
+                else:
+                    with st.spinner("Reading the sheet…"):
+                        summary = ingest_design_sheet_photo(
+                            session, path, uploader_d.strip(), assign_date
+                        )
+            if summary is not None:
+                load_shed.clear()
+                st.success("Sheet ingested.")
+                for note in summary.notes:
+                    st.caption(note)
+
+
+def page_review_queue() -> None:
+    st.title("✅ Review queue")
+    with get_sessionmaker()() as session:
+        items = repo.list_review_items(session)
+    if not items:
+        st.success("Queue is empty — every stored value is machine-verified or human-approved.")
+        return
+    st.caption(
+        f"{len(items)} quarantined row(s). Nothing here is shown on dashboards. "
+        "Check each against the original photo, correct if needed, then approve or reject."
+    )
+    reviewer = st.text_input("Reviewer name (recorded on every decision)")
+    for item in items:
+        title = f"{item.report_date} · loom {item.loom_id or '?'} — {item.reason}"
+        with st.expander(title):
+            if item.uploaded_by:
+                st.caption(f"uploaded by {item.uploaded_by} · {item.submitted_at:%Y-%m-%d %H:%M}")
+            if item.source_doc_path and Path(item.source_doc_path).exists():
+                st.image(item.source_doc_path, caption="original document", width=420)
+            edited = st.data_editor(
+                pd.DataFrame([item.payload]),
+                hide_index=True,
+                key=f"edit_{item.id}",
+                width="stretch",
+            )
+            col_a, col_b = st.columns(2)
+            decided = None
+            if col_a.button("Approve → store", key=f"ok_{item.id}", disabled=not reviewer.strip()):
+                decided = True
+            if col_b.button("Reject", key=f"no_{item.id}", disabled=not reviewer.strip()):
+                decided = False
+            if decided is not None:
+                corrected = {
+                    k: (None if pd.isna(v) else v) for k, v in edited.iloc[0].to_dict().items()
+                }
+                try:
+                    with get_sessionmaker()() as session:
+                        repo.resolve_review_item(
+                            session,
+                            item.id,
+                            approve=decided,
+                            reviewer=reviewer.strip(),
+                            corrected=corrected if decided else None,
+                        )
+                    load_shed.clear()
+                    st.rerun()
+                except (repo.DuplicateStatusError, ValueError) as exc:
+                    st.error(str(exc))
+
+
 def main() -> None:
     status, looms = load_shed()
+    with get_sessionmaker()() as session:
+        pending = repo.count_review_items(session)
+        overdue = overdue_expectations(session)
+    review_label = f"Review queue ({pending})" if pending else "Review queue"
     page = st.sidebar.radio(
         "View",
-        ["Shed overview", "Loom lookup", "Shed mode (camera)"],
+        ["Shed overview", "Loom lookup", "Shed mode (camera)", "Data entry", review_label],
         label_visibility="collapsed",
     )
     st.sidebar.caption(
@@ -299,12 +445,19 @@ def main() -> None:
         "rule and config version that produced it. CMPX rows enter the "
         "database only after passing the identity check."
     )
+    for item in overdue:
+        st.error(f"⏰ {item.headline()} — owners: "
+                 + ", ".join(o.get("name", "?") for o in item.owners))
     if page == "Shed overview":
         page_overview(status, looms)
     elif page == "Loom lookup":
         page_lookup(status, looms)
-    else:
+    elif page == "Shed mode (camera)":
         page_shed_camera(status)
+    elif page == "Data entry":
+        page_data_entry()
+    else:
+        page_review_queue()
 
 
 main()

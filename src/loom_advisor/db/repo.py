@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -17,10 +17,20 @@ from ..schema import (
     Construction,
     LoomRecord,
     MachineType,
+    ReviewItemView,
     Settings,
     StatusEvent,
 )
-from .models import ArticleRow, Loom, LoomAssignment, SettingsEventRow, StatusEventRow
+from .models import (
+    ArticleRow,
+    Document,
+    Loom,
+    LoomAssignment,
+    ReviewItem,
+    SettingsEventRow,
+    StatusEventRow,
+    utcnow,
+)
 
 
 class NotFoundError(Exception):
@@ -170,6 +180,117 @@ def get_loom_record(session: Session, loom_id: str) -> LoomRecord:
         settings=settings,
         status_log=[_status_from_row(r) for r in rows],
     )
+
+
+def add_document(
+    session: Session, kind: str, file_path: str, uploaded_by: str | None = None
+) -> int:
+    document = Document(kind=kind, file_path=str(file_path), uploaded_by=uploaded_by)
+    session.add(document)
+    session.commit()
+    return document.id
+
+
+def add_review_item(
+    session: Session,
+    *,
+    kind: str,
+    reason: str,
+    payload: dict,
+    report_date: date | None = None,
+    loom_id: str | None = None,
+    source_doc_id: int | None = None,
+) -> int:
+    item = ReviewItem(
+        kind=kind,
+        reason=reason,
+        payload=payload,
+        report_date=report_date,
+        loom_id=loom_id,
+        source_doc_id=source_doc_id,
+    )
+    session.add(item)
+    session.commit()
+    return item.id
+
+
+def list_review_items(session: Session, status: str = "pending") -> list[ReviewItemView]:
+    items = session.scalars(
+        select(ReviewItem).where(ReviewItem.status == status).order_by(ReviewItem.id)
+    ).all()
+    views = []
+    for item in items:
+        doc = session.get(Document, item.source_doc_id) if item.source_doc_id else None
+        views.append(
+            ReviewItemView(
+                id=item.id,
+                kind=item.kind,
+                report_date=item.report_date,
+                loom_id=item.loom_id,
+                payload=item.payload,
+                reason=item.reason,
+                status=item.status,
+                source_doc_path=doc.file_path if doc else None,
+                uploaded_by=doc.uploaded_by if doc else None,
+                submitted_at=item.submitted_at,
+            )
+        )
+    return views
+
+
+def count_review_items(session: Session, status: str = "pending") -> int:
+    return len(
+        session.scalars(select(ReviewItem.id).where(ReviewItem.status == status)).all()
+    )
+
+
+def resolve_review_item(
+    session: Session,
+    item_id: int,
+    *,
+    approve: bool,
+    reviewer: str,
+    corrected: dict | None = None,
+) -> None:
+    """Approve (writing a verified status event) or reject a quarantined row.
+
+    On approval the status event is written FIRST — if it collides with an
+    existing row for that loom/day, the item stays pending and the error
+    surfaces, so history can never be silently overwritten."""
+    item = session.get(ReviewItem, item_id)
+    if item is None:
+        raise NotFoundError(f"review item {item_id} not found")
+    if item.status != "pending":
+        raise ValueError(f"review item {item_id} is already {item.status}")
+    if approve:
+        payload = corrected if corrected is not None else item.payload
+        loom_id = (item.loom_id or str(payload.get("loom_no", ""))).strip()
+        if not loom_id or item.report_date is None:
+            raise ValueError("cannot approve without a loom number and report date")
+        create_loom(session, loom_id)
+        event = StatusEvent(
+            report_date=item.report_date,
+            efficiency_pct=payload.get("efficiency_pct"),
+            rpm=payload.get("rpm"),
+            pile_breaks=payload.get("pile_breaks"),
+            pile_cmpx=payload.get("pile_cmpx"),
+            ground_breaks=payload.get("ground_breaks"),
+            ground_cmpx=payload.get("ground_cmpx"),
+            weft_breaks=payload.get("weft_breaks"),
+            weft_cmpx=payload.get("weft_cmpx"),
+            breaks_per_hour=payload.get("breaks_per_hour"),
+            total_kilopicks=payload.get("total_kilopicks"),
+        )
+        add_status(session, loom_id, event, source_doc_id=item.source_doc_id)
+        item.payload = payload
+    item.status = "approved" if approve else "rejected"
+    item.reviewed_by = reviewer
+    item.reviewed_at = utcnow()
+    session.commit()
+
+
+def latest_status_date(session: Session) -> date | None:
+    return session.scalar(select(func.max(StatusEventRow.report_date)))
 
 
 def list_looms(session: Session) -> list[tuple[str, str | None]]:

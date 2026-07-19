@@ -7,7 +7,7 @@ the rest of the system can trust it.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 
 from pydantic import BaseModel, Field
@@ -129,6 +129,21 @@ class LoomRecord(BaseModel):
         if not self.status_log:
             return None
         return max(self.status_log, key=lambda e: e.report_date)
+
+
+class ReviewItemView(BaseModel):
+    """A quarantined row awaiting human review, as shown to the reviewer."""
+
+    id: int
+    kind: str
+    report_date: date | None = None
+    loom_id: str | None = None
+    payload: dict
+    reason: str
+    status: str
+    source_doc_path: str | None = None
+    uploaded_by: str | None = None
+    submitted_at: datetime
 
 
 class Confidence(StrEnum):

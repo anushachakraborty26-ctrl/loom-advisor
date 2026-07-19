@@ -31,14 +31,41 @@ class Loom(Base):
 
 class Document(Base):
     """Raw uploaded files (design sheets, CMPX reports). Every extracted
-    number can point back to the document it came from."""
+    number can point back to the document it came from — and to the
+    person who submitted it."""
 
     __tablename__ = "documents"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     kind: Mapped[str] = mapped_column(String)  # 'design_sheet' | 'cmpx_report'
     file_path: Mapped[str] = mapped_column(String)
+    uploaded_by: Mapped[str | None] = mapped_column(String, nullable=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ReviewItem(Base):
+    """Quarantine for extracted rows that failed machine verification.
+
+    Nothing here is ever displayed as truth. A named reviewer corrects and
+    approves (writing a status event) or rejects. Uploaders submit
+    documents, the machine verifies, reviewers resolve — segregation of
+    duties, so data entry is never compromised."""
+
+    __tablename__ = "review_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String)  # 'cmpx_row'
+    report_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    loom_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    reason: Mapped[str] = mapped_column(String)
+    source_doc_id: Mapped[int | None] = mapped_column(
+        ForeignKey("documents.id"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String, default="pending")
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    reviewed_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ArticleRow(Base):

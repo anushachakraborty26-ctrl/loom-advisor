@@ -1,0 +1,17 @@
+# The data contract: which documents are due, when, and who owns them.
+#
+# The deadline checker (scripts/check_expectations.py, and the in-app
+# banner) compares this contract against what the database has actually
+# received. Fill in real names/emails when the app is deployed at a plant.
+
+expected_documents:
+  break_cmpx_report:
+    description: "Daily Break CMPX report (all pages)"
+    cadence: daily
+    # Yesterday's report must be ingested by this time today.
+    due_by: "10:00"
+    owners:
+      - name: "Weaving office uploader"
+        email: ""
+      - name: "Shift supervisor"
+        email: ""
