@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from .. import __version__
 from ..db import repo
 from ..db.models import Base
-from ..engine import advise, load_config
+from ..engine import advise, evidence_from_cases, load_config
 from ..schema import AdviceReport, Article, MachineType, Settings, StatusEvent
 
 
@@ -112,7 +112,13 @@ def create_app(db_url: str | None = None) -> FastAPI:
             record = repo.get_loom_record(session, loom_id)
         except repo.NotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return advise(record, cfg)
+        cases = repo.effect_cases(session)
+        evidence = (
+            evidence_from_cases(cases, "plant study + observed interventions")
+            if cases
+            else None
+        )
+        return advise(record, cfg, evidence=evidence)
 
     return app
 

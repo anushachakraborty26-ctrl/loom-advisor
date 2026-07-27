@@ -131,4 +131,27 @@ class SettingsEventRow(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     loom_id: Mapped[str] = mapped_column(ForeignKey("looms.loom_id"))
     recorded_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    recorded_by: Mapped[str | None] = mapped_column(String, nullable=True)
     snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class InterventionRow(Base):
+    """One completed settings fix with its measured outcome — the evidence
+    base every prediction is computed from. Seeded with the June 2025
+    study; grown automatically as settings changes are attributed against
+    before/after status reports."""
+
+    __tablename__ = "interventions"
+    __table_args__ = (UniqueConstraint("loom_id", "change_date", "source"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    loom_id: Mapped[str] = mapped_column(String)
+    change_date: Mapped[date] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(String)  # 'study' | 'observed'
+    settings_before: Mapped[dict] = mapped_column(JSON, default=dict)
+    settings_after: Mapped[dict] = mapped_column(JSON, default=dict)
+    cmpx_before: Mapped[float | None] = mapped_column(nullable=True)
+    cmpx_after: Mapped[float | None] = mapped_column(nullable=True)
+    eff_before: Mapped[float | None] = mapped_column(nullable=True)
+    eff_after: Mapped[float | None] = mapped_column(nullable=True)
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)

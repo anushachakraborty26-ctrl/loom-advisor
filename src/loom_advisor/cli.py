@@ -32,6 +32,10 @@ def _print_report(report) -> None:
             if eff.historical_range:
                 line += f" | plant history: {eff.historical_range} (n={eff.n_cases})"
             print(line)
+            if eff.projected_weft_cmpx:
+                print(f"   this loom, weft CMPX: {eff.projected_weft_cmpx}")
+            if eff.projected_efficiency:
+                print(f"   this loom, efficiency: {eff.projected_efficiency}")
         print()
 
 

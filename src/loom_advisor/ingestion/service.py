@@ -56,6 +56,49 @@ def _event_from_row(report_date: date, row: CmpxRow) -> StatusEvent:
     )
 
 
+def process_rows(
+    session: Session,
+    rows: list[CmpxRow],
+    report_date: date,
+    doc_id: int,
+    summary: IngestSummary,
+) -> None:
+    """The verify gate, shared by every status source (photos, ERP, review).
+    Pass rows are stored with provenance; everything else is quarantined."""
+    for row in rows:
+        loom_id = row.loom_no.strip()
+        verdict = check_row_consistency(row)
+        if verdict == "pass" and loom_id.isdigit():
+            machine = row.loom_type if row.loom_type in MACHINE_TYPES else None
+            repo.create_loom(session, loom_id, machine)
+            try:
+                repo.add_status(
+                    session,
+                    loom_id,
+                    _event_from_row(report_date, row),
+                    source_doc_id=doc_id,
+                )
+                summary.verified += 1
+            except repo.DuplicateStatusError:
+                summary.duplicates += 1
+        else:
+            reason = (
+                f"CMPX row {verdict}s the identity check"
+                if verdict != "pass"
+                else f"unusable loom number: {row.loom_no!r}"
+            )
+            repo.add_review_item(
+                session,
+                kind="cmpx_row",
+                reason=reason,
+                payload=row.model_dump(),
+                report_date=report_date,
+                loom_id=loom_id if loom_id.isdigit() else None,
+                source_doc_id=doc_id,
+            )
+            summary.queued_for_review += 1
+
+
 def ingest_report_upload(
     session: Session,
     page_paths: list[Path],
@@ -69,38 +112,7 @@ def ingest_report_upload(
     for path in page_paths:
         doc_id = repo.add_document(session, "cmpx_report", str(path), uploaded_by)
         extraction = reader(path)
-        for row in extraction.rows:
-            loom_id = row.loom_no.strip()
-            verdict = check_row_consistency(row)
-            if verdict == "pass" and loom_id.isdigit():
-                machine = row.loom_type if row.loom_type in MACHINE_TYPES else None
-                repo.create_loom(session, loom_id, machine)
-                try:
-                    repo.add_status(
-                        session,
-                        loom_id,
-                        _event_from_row(report_date, row),
-                        source_doc_id=doc_id,
-                    )
-                    summary.verified += 1
-                except repo.DuplicateStatusError:
-                    summary.duplicates += 1
-            else:
-                reason = (
-                    f"CMPX row {verdict}s the identity check"
-                    if verdict != "pass"
-                    else f"unusable loom number: {row.loom_no!r}"
-                )
-                repo.add_review_item(
-                    session,
-                    kind="cmpx_row",
-                    reason=reason,
-                    payload=row.model_dump(),
-                    report_date=report_date,
-                    loom_id=loom_id if loom_id.isdigit() else None,
-                    source_doc_id=doc_id,
-                )
-                summary.queued_for_review += 1
+        process_rows(session, extraction.rows, report_date, doc_id, summary)
     return summary
 
 

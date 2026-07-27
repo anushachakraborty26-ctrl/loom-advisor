@@ -163,6 +163,24 @@ def main() -> None:
                         }
                     )
 
+        # Seed the evidence base with the June 2025 study's four documented
+        # interventions (real settings changes with measured outcomes).
+        seeded = 0
+        for case in load_config().bands["evidence"]["plant_study"]["cases"]:
+            seeded += int(
+                repo.add_intervention(
+                    session,
+                    loom_id=case["loom"],
+                    change_date=date(2025, 6, 15),
+                    source="study",
+                    cmpx_before=case["cmpx_before"],
+                    cmpx_after=case["cmpx_after"],
+                    eff_before=case["eff_before"],
+                    eff_after=case["eff_after"],
+                    notes="PROJECT 1 manual optimisation (nozzle pressures + shed timing)",
+                )
+            )
+
         flagged_path = INCOMING / "flagged_for_review.json"
         flagged_path.write_text(json.dumps(flagged, indent=2))
 
@@ -171,6 +189,7 @@ def main() -> None:
         print(f"  looms:        {len(all_looms)}")
         print(f"  articles:     {articles} (assigned as of {ASSIGNMENT_START.isoformat()})")
         print(f"  status rows:  {statuses} verified (identity check)")
+        print(f"  evidence:     {seeded} study interventions seeded")
         print(f"  flagged:      {len(flagged)} items -> {flagged_path.relative_to(ROOT)}")
 
         # --- Trend: compare the two most recent report days -----------------

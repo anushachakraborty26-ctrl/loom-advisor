@@ -20,8 +20,8 @@ from sqlalchemy.orm import sessionmaker
 
 from loom_advisor.alerts import overdue_expectations
 from loom_advisor.db import repo
-from loom_advisor.engine import advise, load_config
-from loom_advisor.schema import AdviceReport
+from loom_advisor.engine import advise, evidence_from_cases, load_config
+from loom_advisor.schema import AdviceReport, Settings
 
 ROOT = Path(__file__).resolve().parents[3]
 DB_URL = os.environ.get("LOOM_DB_URL", f"sqlite:///{ROOT / 'loom_advisor.db'}")
@@ -72,7 +72,11 @@ def load_shed() -> tuple[pd.DataFrame, pd.DataFrame]:
 def loom_advice(loom_id: str) -> AdviceReport:
     with get_sessionmaker()() as session:
         record = repo.get_loom_record(session, loom_id)
-    return advise(record, get_config())
+        cases = repo.effect_cases(session)
+    evidence = (
+        evidence_from_cases(cases, "plant study + observed interventions") if cases else None
+    )
+    return advise(record, get_config(), evidence=evidence)
 
 
 def loom_record(loom_id: str):
@@ -92,6 +96,10 @@ def render_advice(report: AdviceReport) -> None:
             st.markdown(f"**Why:** {s.reasoning}")
             if s.expected_effect:
                 eff = s.expected_effect
+                if eff.projected_weft_cmpx:
+                    st.markdown(f"**This loom, weft CMPX:** {eff.projected_weft_cmpx}")
+                if eff.projected_efficiency:
+                    st.markdown(f"**This loom, efficiency:** {eff.projected_efficiency}")
                 line = f"Expect: {eff.direction}"
                 if eff.historical_range:
                     line += f" — {eff.historical_range} (n={eff.n_cases}; {eff.source})"
@@ -114,6 +122,26 @@ def render_loom_detail(loom_id: str, status: pd.DataFrame) -> None:
     if construction.pile_ratio:
         bits.append(f"pile ratio {construction.pile_ratio}")
     st.caption(" · ".join(bits))
+
+    settings = record.settings
+    knob_bits = [
+        f"{label} {value:g}"
+        for label, value in [
+            ("main", settings.main_pressure),
+            ("tandem", settings.tandem_pressure),
+            ("sub", settings.sub_pressure),
+            ("crossing", settings.shed_crossing_deg),
+            ("rpm", settings.speed_rpm),
+        ]
+        if value is not None
+    ]
+    if knob_bits:
+        st.caption("current settings: " + " · ".join(knob_bits))
+    else:
+        st.caption(
+            "⚙️ no settings on record — enter them via Data entry → Loom settings "
+            "to unlock which-knob advice with predicted numbers"
+        )
 
     history = status[status["loom"] == loom_id].sort_values("date")
     if history.empty:
@@ -312,8 +340,8 @@ def page_data_entry() -> None:
         "named supervisor. Originals are stored with your name and timestamp."
     )
     has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    tab_report, tab_design = st.tabs(
-        ["Weaving room — daily report", "Design studio — order sheet"]
+    tab_report, tab_design, tab_settings = st.tabs(
+        ["Weaving room — daily report", "Design studio — order sheet", "Loom settings"]
     )
 
     with tab_report:
@@ -377,6 +405,48 @@ def page_data_entry() -> None:
                 st.success("Sheet ingested.")
                 for note in summary.notes:
                     st.caption(note)
+
+    with tab_settings:
+        st.caption(
+            "Technician entry of a loom's current knob positions. The moment "
+            "these exist, the advisor can say WHICH knob to move, by how "
+            "much, and what numbers to expect — and every future change is "
+            "auto-attributed against before/after reports to grow the "
+            "evidence base."
+        )
+        with get_sessionmaker()() as session:
+            loom_options = sorted((loom for loom, _ in repo.list_looms(session)), key=int)
+        loom_sel = st.selectbox("Loom", loom_options, key="set_loom")
+        col1, col2, col3 = st.columns(3)
+        main_p = col1.number_input("Main pressure (kg/cm²)", value=None, step=0.1, key="s_main")
+        tandem_p = col2.number_input("Tandem pressure (kg/cm²)", value=None, step=0.1, key="s_tan")
+        sub_p = col3.number_input("Sub pressure (kg/cm²)", value=None, step=0.1, key="s_sub")
+        col4, col5, col6 = st.columns(3)
+        crossing = col4.number_input("Shed crossing (deg)", value=None, step=1.0, key="s_cross")
+        height = col5.number_input("Main nozzle height (mm)", value=None, step=1.0, key="s_h")
+        speed = col6.number_input("Speed (RPM)", value=None, step=1.0, key="s_rpm")
+        technician = st.text_input("Your name", key="s_name")
+        entered_any = any(v is not None for v in (main_p, tandem_p, sub_p, crossing, height, speed))
+        if st.button("Record settings", disabled=not (entered_any and technician.strip())):
+            with get_sessionmaker()() as session:
+                repo.set_settings(
+                    session,
+                    loom_sel,
+                    Settings(
+                        main_pressure=main_p,
+                        tandem_pressure=tandem_p,
+                        sub_pressure=sub_p,
+                        shed_crossing_deg=crossing,
+                        main_nozzle_height_mm=height,
+                        speed_rpm=speed,
+                    ),
+                    recorded_by=technician.strip(),
+                )
+            load_shed.clear()
+            st.success(
+                f"Settings recorded for loom {loom_sel} — its advice now includes "
+                "band checks against the golden values. See Loom lookup."
+            )
 
 
 def page_review_queue() -> None:

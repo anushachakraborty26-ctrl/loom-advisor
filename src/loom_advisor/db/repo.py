@@ -6,7 +6,7 @@ engine and API never see SQLAlchemy objects.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from ..schema import (
     Article,
     Construction,
+    EffectCase,
     LoomRecord,
     MachineType,
     ReviewItemView,
@@ -24,6 +25,7 @@ from ..schema import (
 from .models import (
     ArticleRow,
     Document,
+    InterventionRow,
     Loom,
     LoomAssignment,
     ReviewItem,
@@ -83,15 +85,89 @@ def assign_article(session: Session, loom_id: str, article_id: str, start_date: 
     session.commit()
 
 
-def set_settings(session: Session, loom_id: str, settings: Settings) -> None:
+def set_settings(
+    session: Session, loom_id: str, settings: Settings, recorded_by: str | None = None
+) -> None:
     _require_loom(session, loom_id)
     session.add(
         SettingsEventRow(
             loom_id=loom_id,
+            recorded_by=recorded_by,
             snapshot=settings.model_dump(mode="json", exclude_none=True),
         )
     )
     session.commit()
+
+
+def add_intervention(
+    session: Session,
+    *,
+    loom_id: str,
+    change_date: date,
+    source: str,
+    settings_before: dict | None = None,
+    settings_after: dict | None = None,
+    cmpx_before: float | None = None,
+    cmpx_after: float | None = None,
+    eff_before: float | None = None,
+    eff_after: float | None = None,
+    notes: str | None = None,
+) -> bool:
+    """Record one intervention; returns False if already recorded."""
+    existing = session.scalar(
+        select(InterventionRow).where(
+            InterventionRow.loom_id == loom_id,
+            InterventionRow.change_date == change_date,
+            InterventionRow.source == source,
+        )
+    )
+    if existing is not None:
+        return False
+    session.add(
+        InterventionRow(
+            loom_id=loom_id,
+            change_date=change_date,
+            source=source,
+            settings_before=settings_before or {},
+            settings_after=settings_after or {},
+            cmpx_before=cmpx_before,
+            cmpx_after=cmpx_after,
+            eff_before=eff_before,
+            eff_after=eff_after,
+            notes=notes,
+        )
+    )
+    session.commit()
+    return True
+
+
+def effect_cases(session: Session) -> list[EffectCase]:
+    """All interventions with complete before/after metrics — the evidence
+    base predictions are computed from."""
+    rows = session.scalars(select(InterventionRow)).all()
+    return [
+        EffectCase(
+            cmpx_before=row.cmpx_before,
+            cmpx_after=row.cmpx_after,
+            eff_before=row.eff_before,
+            eff_after=row.eff_after,
+        )
+        for row in rows
+        if None
+        not in (row.cmpx_before, row.cmpx_after, row.eff_before, row.eff_after)
+    ]
+
+
+def list_settings_events(
+    session: Session, loom_id: str
+) -> list[tuple[datetime, Settings]]:
+    _require_loom(session, loom_id)
+    rows = session.scalars(
+        select(SettingsEventRow)
+        .where(SettingsEventRow.loom_id == loom_id)
+        .order_by(SettingsEventRow.recorded_at, SettingsEventRow.id)
+    ).all()
+    return [(row.recorded_at, Settings.model_validate(row.snapshot)) for row in rows]
 
 
 def add_status(

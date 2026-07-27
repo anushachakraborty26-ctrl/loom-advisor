@@ -1,0 +1,34 @@
+# Column mapping for ERP CSV exports.
+#
+# Connecting a specific plant's ERP = editing this file to match their
+# export headers — no code changes. Left side: our field. Right side: the
+# column header in their CSV. Defaults mirror the Break CMPX report.
+
+date_format: "%d.%m.%Y"
+
+status:
+  loom_no: "LOOM NO"
+  date: "DATE"
+  loom_type: "LOOM"
+  efficiency_pct: "EFFI"
+  rpm: "RPM"
+  pile_breaks: "PILE BREAK"
+  pile_cmpx: "PILE CMPX"
+  ground_breaks: "GRD BREAK"
+  ground_cmpx: "GRD CMPX"
+  weft_breaks: "WEFT BREAK"
+  weft_cmpx: "WEFT CMPX"
+  breaks_per_hour: "BKG/HOURS"
+  total_kilopicks: "TOTAL KP"
+
+settings:
+  loom_no: "LOOM NO"
+  date: "DATE"
+  main_pressure: "MAIN PRESSURE"
+  tandem_pressure: "TANDEM PRESSURE"
+  sub_pressure: "SUB PRESSURE"
+  main_nozzle_height_mm: "MAIN NOZZLE HEIGHT"
+  sub_nozzle_spacing_mm: "SUB NOZZLE SPACING"
+  sub_to_reed_gap_mm: "SUB REED GAP"
+  shed_crossing_deg: "SHED CROSSING"
+  speed_rpm: "SPEED"

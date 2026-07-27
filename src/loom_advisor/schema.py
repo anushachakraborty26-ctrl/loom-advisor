@@ -152,15 +152,38 @@ class Confidence(StrEnum):
     low = "low"
 
 
+class EffectCase(BaseModel):
+    """One completed intervention: metrics before and after a settings fix."""
+
+    cmpx_before: float
+    cmpx_after: float
+    eff_before: float
+    eff_after: float
+
+
+class EffectEvidence(BaseModel):
+    """Distilled evidence from all known interventions (study + observed).
+    Every prediction the engine makes is computed from these cases —
+    as more interventions are recorded, the ranges tighten on their own."""
+
+    n_cases: int
+    cmpx_reduction_pct: tuple[float, float, float]  # (min, median, max)
+    eff_gain_points: tuple[float, float, float]  # (min, median, max)
+    source: str
+
+
 class ExpectedEffect(BaseModel):
     """The honest prediction: a direction always, a range only when history
-    backs it, and the sample size stated so the claim can never outrun the
-    data behind it."""
+    backs it, the sample size stated so the claim can never outrun the data
+    behind it — and, when the loom's current metrics are known, projected
+    numbers for THIS loom computed from the evidence."""
 
     direction: str
     historical_range: str | None = None
     n_cases: int | None = None
     source: str | None = None
+    projected_weft_cmpx: str | None = None
+    projected_efficiency: str | None = None
 
 
 class Suggestion(BaseModel):

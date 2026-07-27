@@ -19,6 +19,8 @@ import yaml
 from ..schema import (
     AdviceReport,
     Confidence,
+    EffectCase,
+    EffectEvidence,
     ExpectedEffect,
     LoomRecord,
     Suggestion,
@@ -49,17 +51,68 @@ def load_config(config_dir: Path | None = None) -> Config:
     )
 
 
-def _study_effect(cfg: Config) -> ExpectedEffect:
+def _median(values: list[float]) -> float:
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def evidence_from_cases(cases: list[EffectCase], source: str) -> EffectEvidence:
+    """Distil intervention cases into (min, median, max) effect stats."""
+    reductions = [
+        (c.cmpx_before - c.cmpx_after) / c.cmpx_before * 100
+        for c in cases
+        if c.cmpx_before > 0
+    ]
+    gains = [c.eff_after - c.eff_before for c in cases]
+    return EffectEvidence(
+        n_cases=len(cases),
+        cmpx_reduction_pct=(min(reductions), _median(reductions), max(reductions)),
+        eff_gain_points=(min(gains), _median(gains), max(gains)),
+        source=source,
+    )
+
+
+def _fallback_evidence(cfg: Config) -> EffectEvidence:
     ev = cfg.bands["evidence"]["plant_study"]
-    return ExpectedEffect(
+    cases = [EffectCase.model_validate(c) for c in ev["cases"]]
+    return EffectEvidence.model_validate(evidence_from_cases(cases, ev["source"]))
+
+
+def _quantified_effect(
+    evidence: EffectEvidence,
+    cmpx_now: float | None,
+    eff_now: float | None,
+) -> ExpectedEffect:
+    """Build the prediction: historical ranges always, and — when this
+    loom's current metrics are known — projected numbers computed by
+    applying the observed effect distribution to them."""
+    red_lo, red_med, red_hi = evidence.cmpx_reduction_pct
+    gain_lo, gain_med, gain_hi = evidence.eff_gain_points
+    effect = ExpectedEffect(
         direction="CMPX down, efficiency up",
         historical_range=(
-            f"{ev['efficiency_gain_points']} efficiency points; "
-            f"CMPX {ev['cmpx_reduction_pct']}"
+            f"+{gain_lo:.0f} to +{gain_hi:.0f} efficiency points; "
+            f"CMPX -{red_lo:.0f}% to -{red_hi:.0f}%"
         ),
-        n_cases=ev["n_cases"],
-        source=ev["source"],
+        n_cases=evidence.n_cases,
+        source=evidence.source,
     )
+    if cmpx_now is not None and cmpx_now > 0:
+        best = cmpx_now * (1 - red_hi / 100)
+        mid = cmpx_now * (1 - red_med / 100)
+        worst = cmpx_now * (1 - red_lo / 100)
+        effect.projected_weft_cmpx = (
+            f"{cmpx_now:.1f} → ~{mid:.0f} expected (range {best:.0f}–{worst:.0f})"
+        )
+    if eff_now is not None:
+        effect.projected_efficiency = (
+            f"{eff_now:.0f}% → ~{min(eff_now + gain_med, 100):.0f}% expected "
+            f"(range {min(eff_now + gain_lo, 100):.0f}–{min(eff_now + gain_hi, 100):.0f}%)"
+        )
+    return effect
 
 
 def _direction_only(direction: str) -> ExpectedEffect:
@@ -81,7 +134,11 @@ def _band_suggestion(v: Violation, cfg: Config, effect: ExpectedEffect) -> Sugge
     )
 
 
-def advise(record: LoomRecord, cfg: Config | None = None) -> AdviceReport:
+def advise(
+    record: LoomRecord,
+    cfg: Config | None = None,
+    evidence: EffectEvidence | None = None,
+) -> AdviceReport:
     cfg = cfg or load_config()
     notes: list[str] = []
     suggestions: list[Suggestion] = []
@@ -90,9 +147,10 @@ def advise(record: LoomRecord, cfg: Config | None = None) -> AdviceReport:
     latest = record.latest_status
     thresholds = cfg.bands["thresholds"]
     cmpx = latest.weft_cmpx if latest else None
+    eff_now = latest.efficiency_pct if latest else None
     alert = thresholds["weft_cmpx_target"]
     cmpx_high = cmpx is not None and cmpx >= alert
-    study_effect = _study_effect(cfg)
+    study_effect = _quantified_effect(evidence or _fallback_evidence(cfg), cmpx, eff_now)
 
     if latest is not None:
         status_bits = []
